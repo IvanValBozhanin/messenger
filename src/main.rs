@@ -1,5 +1,7 @@
 mod api;
 mod auth;
+mod chat;
+mod ws;
 
 use std::sync::Arc;
 
@@ -16,6 +18,7 @@ pub struct AppState {
     /// Valid Argon2 hash of a random string; used to equalize login timing
     /// for unknown usernames.
     pub dummy_hash: Arc<String>,
+    pub hub: ws::Hub,
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -32,6 +35,15 @@ fn app(state: AppState) -> Router {
         .route("/api/sessions", get(api::list_sessions))
         .route("/api/sessions/{id}", delete(api::revoke_session))
         .route("/api/invites", get(api::list_invites).post(api::create_invite))
+        .route("/api/ws", get(ws::ws_handler))
+        .route(
+            "/api/conversations",
+            get(chat::list_conversations).post(chat::create_conversation),
+        )
+        .route(
+            "/api/conversations/{id}/messages",
+            get(chat::list_messages).post(chat::send_message),
+        )
         .fallback_service(ServeDir::new("static"))
         .with_state(state)
 }
@@ -89,6 +101,7 @@ async fn main() {
         dummy_hash: Arc::new(
             auth::hash_password(&auth::generate_token()).expect("failed to create dummy hash"),
         ),
+        hub: ws::Hub::default(),
     };
 
     let port: u16 = std::env::var("PORT")

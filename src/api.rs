@@ -180,6 +180,7 @@ pub async fn logout(
         .execute(&state.pool)
         .await
         .map_err(internal)?;
+    state.hub.kick_session(&user.token_hash);
     Ok((jar.remove(SESSION_COOKIE), Json(json!({}))))
 }
 
@@ -221,15 +222,18 @@ pub async fn revoke_session(
     user: AuthUser,
     Path(id): Path<i64>,
 ) -> Result<Json<Value>, ApiError> {
-    let result = sqlx::query("DELETE FROM sessions WHERE id = $1 AND user_id = $2")
-        .bind(id)
-        .bind(user.user_id)
-        .execute(&state.pool)
-        .await
-        .map_err(internal)?;
-    if result.rows_affected() == 0 {
+    let revoked: Option<String> = sqlx::query_scalar(
+        "DELETE FROM sessions WHERE id = $1 AND user_id = $2 RETURNING token_hash",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(internal)?;
+    let Some(token_hash) = revoked else {
         return Err((StatusCode::NOT_FOUND, "no such session"));
-    }
+    };
+    state.hub.kick_session(&token_hash);
     Ok(Json(json!({})))
 }
 

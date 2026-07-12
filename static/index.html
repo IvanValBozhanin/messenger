@@ -6,26 +6,48 @@
   <title>Messenger</title>
   <style>
     :root { color-scheme: dark; }
-    body { font-family: system-ui, sans-serif; max-width: 26rem; margin: 0 auto; padding: 1.5rem 1rem; background: #111; color: #eee; }
-    h1 { font-size: 1.4rem; }
-    h2 { font-size: 1.05rem; margin-top: 1.6rem; }
-    form { display: grid; gap: .5rem; margin-bottom: 1.2rem; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 30rem; margin: 0 auto; padding: .8rem 1rem 1.5rem; background: #111; color: #eee; }
+    h1 { font-size: 1.3rem; margin: .4rem 0 .8rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.4rem; }
+    form { display: grid; gap: .5rem; margin-bottom: 1rem; }
     input { padding: .55rem; border-radius: .4rem; border: 1px solid #444; background: #1c1c1c; color: #eee; font-size: 1rem; }
     button { padding: .5rem .8rem; border-radius: .4rem; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: .95rem; cursor: pointer; }
     button:hover { background: #333; }
-    ul { list-style: none; padding: 0; display: grid; gap: .4rem; }
-    li { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .9rem; background: #1a1a1a; padding: .5rem .6rem; border-radius: .4rem; }
-    li button { padding: .2rem .5rem; font-size: .8rem; }
+    ul { list-style: none; padding: 0; display: grid; gap: .4rem; margin: .5rem 0; }
+    li { font-size: .92rem; background: #1a1a1a; padding: .5rem .6rem; border-radius: .4rem; }
+    li button { padding: .2rem .5rem; font-size: .8rem; margin-left: .4rem; }
     code { background: #222; padding: .1rem .3rem; border-radius: .3rem; }
     .error { color: #f77; min-height: 1.2em; font-size: .9rem; }
     .muted { color: #999; font-size: .85rem; }
     [hidden] { display: none !important; }
+
+    #topbar { display: flex; align-items: center; gap: .6rem; padding: .3rem 0 .6rem; border-bottom: 1px solid #333; }
+    #topbar .spacer { flex: 1; }
+    .conv { cursor: pointer; display: flex; gap: .4rem; align-items: baseline; overflow: hidden; white-space: nowrap; }
+    .conv:hover { background: #232323; }
+
+    #view-chat { display: flex; flex-direction: column; height: calc(100dvh - 5.5rem); }
+    #chat-head { display: flex; align-items: center; gap: .6rem; padding: .4rem 0; }
+    #message-list { flex: 1; overflow-y: auto; align-content: end; }
+    .msg { max-width: 85%; }
+    .msg.mine { margin-left: auto; background: #1e2a3a; }
+    .msg div:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
+    #send-form { display: flex; gap: .5rem; margin: .5rem 0 0; }
+    #send-input { flex: 1; }
   </style>
 </head>
 <body>
-  <h1>Messenger</h1>
+  <div id="topbar" hidden>
+    <strong id="topbar-user"></strong>
+    <span class="spacer"></span>
+    <button id="tab-chats">Chats</button>
+    <button id="tab-settings">Settings</button>
+    <button id="logout-btn">Log out</button>
+  </div>
 
   <section id="view-auth" hidden>
+    <h1>Messenger</h1>
     <h2>Log in</h2>
     <form id="login-form">
       <input id="login-username" placeholder="username" autocomplete="username" required>
@@ -44,9 +66,29 @@
     </form>
   </section>
 
-  <section id="view-home" hidden>
-    <p>Logged in as <strong id="home-user"></strong> <button id="logout-btn">log out</button></p>
+  <section id="view-chats" hidden>
+    <form id="new-conv-form">
+      <input id="new-conv-username" placeholder="start chat with username…">
+      <div id="new-conv-error" class="error"></div>
+    </form>
+    <button id="self-conv-btn">Notes to self</button>
+    <ul id="conv-list"></ul>
+  </section>
 
+  <section id="view-chat" hidden>
+    <div id="chat-head">
+      <button id="back-btn">←</button>
+      <strong id="chat-title"></strong>
+    </div>
+    <ul id="message-list"></ul>
+    <form id="send-form">
+      <input id="send-input" placeholder="message…" autocomplete="off">
+      <button type="submit">Send</button>
+    </form>
+    <div id="chat-error" class="error"></div>
+  </section>
+
+  <section id="view-settings" hidden>
     <h2>Active sessions</h2>
     <ul id="session-list"></ul>
 

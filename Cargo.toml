@@ -1,13 +1,14 @@
 [package]
 name = "messenger"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 
 [dependencies]
 argon2 = "0.5"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 axum-extra = { version = "0.10", features = ["cookie"] }
 base64 = "0.22"
+futures-util = "0.3"
 hex = "0.4"
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }

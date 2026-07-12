@@ -59,3 +59,42 @@ export const createInvite = () =>
   api<{ code: string; expires_at: string }>("/api/invites", { method: "POST" });
 
 export const listInvites = () => api<{ invites: Invite[] }>("/api/invites");
+
+export interface Conversation {
+  id: number;
+  kind: "p2p" | "self";
+  peers: string;
+  last_message: string | null;
+  last_at: string | null;
+}
+
+export interface ChatMessage {
+  id: number;
+  sender: string;
+  content: string;
+  created_at: string;
+}
+
+export type WsEvent =
+  | { type: "message"; conversation_id: number; message: ChatMessage }
+  | { type: "session_revoked" };
+
+export const listConversations = () =>
+  api<{ conversations: Conversation[] }>("/api/conversations");
+
+export const createConversation = (kind: "p2p" | "self", username?: string) =>
+  api<{ id: number; kind: string }>("/api/conversations", {
+    method: "POST",
+    body: JSON.stringify({ kind, username }),
+  });
+
+export const listMessages = (conversationId: number, after?: number) =>
+  api<{ messages: ChatMessage[] }>(
+    `/api/conversations/${conversationId}/messages${after ? `?after=${after}` : ""}`,
+  );
+
+export const sendMessage = (conversationId: number, content: string) =>
+  api<ChatMessage>(`/api/conversations/${conversationId}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
