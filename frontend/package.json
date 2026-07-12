@@ -1,0 +1,12 @@
+{
+  "name": "messenger-frontend",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --minify --outfile=../static/app.js",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "typescript": "^5.5.0"
+  }
+}

@@ -5,17 +5,57 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Messenger</title>
   <style>
-    body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100dvh; margin: 0; background: #111; color: #eee; }
-    main { text-align: center; }
-    #status { color: #6c6; }
+    :root { color-scheme: dark; }
+    body { font-family: system-ui, sans-serif; max-width: 26rem; margin: 0 auto; padding: 1.5rem 1rem; background: #111; color: #eee; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.6rem; }
+    form { display: grid; gap: .5rem; margin-bottom: 1.2rem; }
+    input { padding: .55rem; border-radius: .4rem; border: 1px solid #444; background: #1c1c1c; color: #eee; font-size: 1rem; }
+    button { padding: .5rem .8rem; border-radius: .4rem; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: .95rem; cursor: pointer; }
+    button:hover { background: #333; }
+    ul { list-style: none; padding: 0; display: grid; gap: .4rem; }
+    li { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .9rem; background: #1a1a1a; padding: .5rem .6rem; border-radius: .4rem; }
+    li button { padding: .2rem .5rem; font-size: .8rem; }
+    code { background: #222; padding: .1rem .3rem; border-radius: .3rem; }
+    .error { color: #f77; min-height: 1.2em; font-size: .9rem; }
+    .muted { color: #999; font-size: .85rem; }
+    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
-  <main>
-    <h1>Messenger</h1>
-    <p>Phase 1 — hello from Render.</p>
-    <p>Server: <span id="status">checking…</span></p>
-  </main>
+  <h1>Messenger</h1>
+
+  <section id="view-auth" hidden>
+    <h2>Log in</h2>
+    <form id="login-form">
+      <input id="login-username" placeholder="username" autocomplete="username" required>
+      <input id="login-password" type="password" placeholder="password" autocomplete="current-password" required>
+      <button type="submit">Log in</button>
+      <div id="login-error" class="error"></div>
+    </form>
+
+    <h2>Register (invite needed)</h2>
+    <form id="register-form">
+      <input id="reg-invite" placeholder="invite code" required>
+      <input id="reg-username" placeholder="username" autocomplete="username" required>
+      <input id="reg-password" type="password" placeholder="password (min 8 chars)" autocomplete="new-password" required>
+      <button type="submit">Create account</button>
+      <div id="register-error" class="error"></div>
+    </form>
+  </section>
+
+  <section id="view-home" hidden>
+    <p>Logged in as <strong id="home-user"></strong> <button id="logout-btn">log out</button></p>
+
+    <h2>Active sessions</h2>
+    <ul id="session-list"></ul>
+
+    <h2>Invites</h2>
+    <p class="muted">One-time codes, valid 7 days. Send the link to someone you trust.</p>
+    <button id="new-invite-btn">New invite</button>
+    <ul id="invite-list"></ul>
+  </section>
+
   <script src="/app.js"></script>
 </body>
 </html>
