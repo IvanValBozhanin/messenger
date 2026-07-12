@@ -33,7 +33,7 @@
 
     #view-chat { display: flex; flex-direction: column; height: calc(100dvh - 5.5rem); }
     #chat-head { display: flex; align-items: center; gap: .6rem; padding: .4rem 0; }
-    #message-list { flex: 1; overflow-y: auto; align-content: end; }
+    #message-list { flex: 1; min-height: 0; overflow-y: auto; align-content: end; }
     .msg { max-width: 85%; }
     .msg.mine { margin-left: auto; background: #1e2a3a; }
     .msg div:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
