@@ -1,6 +1,7 @@
 mod api;
 mod auth;
 mod chat;
+mod keys;
 mod ws;
 
 use std::sync::Arc;
@@ -43,6 +44,15 @@ fn app(state: AppState) -> Router {
         .route(
             "/api/conversations/{id}/messages",
             get(chat::list_messages).post(chat::send_message),
+        )
+        .route("/api/devices", post(keys::register_device))
+        .route(
+            "/api/conversations/{id}/devices",
+            get(keys::conversation_devices),
+        )
+        .route(
+            "/api/conversations/{id}/keys",
+            get(keys::get_conversation_key).post(keys::post_conversation_keys),
         )
         .fallback_service(ServeDir::new("static"))
         .with_state(state)

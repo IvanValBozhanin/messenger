@@ -10,7 +10,9 @@ use crate::AppState;
 
 type ApiError = (StatusCode, &'static str);
 
-const MAX_CONTENT_CHARS: usize = 4000;
+// Generous server-side cap: E2EE envelopes are base64 (~4/3 expansion) of
+// UTF-8 plaintext capped at 4000 chars client-side.
+const MAX_CONTENT_CHARS: usize = 32000;
 const HISTORY_PAGE: i64 = 200;
 
 fn internal(_e: sqlx::Error) -> ApiError {

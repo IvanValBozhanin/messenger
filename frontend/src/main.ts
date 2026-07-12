@@ -11,10 +11,20 @@ import {
   login,
   logout,
   register,
+  registerDevice,
   revokeSession,
   sendMessage,
   WsEvent,
 } from "./api";
+import {
+  decryptEnvelope,
+  DeviceIdentity,
+  encryptText,
+  initDevice,
+  parseEnvelope,
+  supportsX25519,
+} from "./crypto";
+import { dropKeyCache, ensureConvKey, KeyPending, sweepWrapMissing } from "./keysync";
 
 const $ = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
@@ -24,7 +34,9 @@ const $ = <T extends HTMLElement>(id: string): T =>
 let loggedIn = false;
 let socket: WebSocket | null = null;
 let currentConv: number | null = null;
+let currentKey: CryptoKey | null = null;
 let lastMsgId = 0;
+let identity: DeviceIdentity | null = null;
 
 // ---------- views ----------
 
@@ -36,7 +48,10 @@ function show(view: View) {
   $("view-chat").hidden = view !== "chat";
   $("view-settings").hidden = view !== "settings";
   $("topbar").hidden = view === "auth";
-  if (view !== "chat") currentConv = null;
+  if (view !== "chat") {
+    currentConv = null;
+    currentKey = null;
+  }
 }
 
 function setError(id: string, message: string) {
@@ -45,6 +60,7 @@ function setError(id: string, message: string) {
 
 function errorMessage(e: unknown): string {
   if (e instanceof ApiError) return e.message;
+  if (e instanceof KeyPending) return e.message;
   return "network error — server may be waking up, retry in a minute";
 }
 
@@ -53,10 +69,10 @@ function errorMessage(e: unknown): string {
 function connectWs() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   socket = new WebSocket(`${proto}://${location.host}/api/ws`);
-  socket.onmessage = (ev) => {
+  socket.onmessage = async (ev) => {
     const event: WsEvent = JSON.parse(ev.data);
     if (event.type === "message") {
-      onIncoming(event.conversation_id, event.message);
+      await onIncoming(event.conversation_id, event.message);
     } else if (event.type === "session_revoked") {
       loggedIn = false;
       socket?.close();
@@ -67,7 +83,6 @@ function connectWs() {
   socket.onclose = () => {
     socket = null;
     if (loggedIn) {
-      // Reconnect and catch up on anything missed while offline.
       setTimeout(() => {
         if (!loggedIn) return;
         connectWs();
@@ -78,10 +93,10 @@ function connectWs() {
   };
 }
 
-function onIncoming(conversationId: number, message: ChatMessage) {
+async function onIncoming(conversationId: number, message: ChatMessage) {
   if (currentConv === conversationId && message.id > lastMsgId) {
-    appendMessage(message);
     lastMsgId = message.id;
+    await appendMessage(message);
   } else if (!$("view-chats").hidden) {
     void renderConversations();
   }
@@ -92,6 +107,21 @@ function onIncoming(conversationId: number, message: ChatMessage) {
 async function enterApp(username: string) {
   loggedIn = true;
   $("topbar-user").textContent = username;
+
+  if (!(await supportsX25519())) {
+    show("chats");
+    setError(
+      "new-conv-error",
+      "this browser lacks X25519 WebCrypto — encrypted messaging unavailable; update your browser",
+    );
+    return;
+  }
+  identity = await initDevice(async (pub, name) => {
+    const d = await registerDevice(pub, name);
+    return d.id;
+  });
+  void sweepWrapMissing(identity);
+
   if (!socket) connectWs();
   show("chats");
   await renderConversations();
@@ -109,7 +139,9 @@ async function renderConversations() {
       const preview = document.createElement("span");
       preview.className = "muted";
       preview.textContent = c.last_message
-        ? ` ${c.last_message.slice(0, 40)}`
+        ? parseEnvelope(c.last_message)
+          ? " 🔒"
+          : ` ${c.last_message.slice(0, 40)}`
         : " (no messages yet)";
       li.append(title, preview);
       li.onclick = () => void openConversation(c.id, title.textContent ?? "");
@@ -120,11 +152,24 @@ async function renderConversations() {
 
 async function openConversation(id: number, title: string) {
   currentConv = id;
+  currentKey = null;
   lastMsgId = 0;
   $("chat-title").textContent = title;
   $("message-list").replaceChildren();
+  setError("chat-error", "");
+  $<HTMLInputElement>("send-input").disabled = false;
   show("chat");
   currentConv = id; // show() clears it
+
+  try {
+    if (!identity) throw new Error("no device identity");
+    currentKey = await ensureConvKey(id, identity);
+  } catch (e) {
+    setError("chat-error", errorMessage(e));
+    if (e instanceof KeyPending) {
+      $<HTMLInputElement>("send-input").disabled = true;
+    }
+  }
   await loadNewMessages(id);
 }
 
@@ -132,20 +177,33 @@ async function loadNewMessages(id: number) {
   const { messages } = await listMessages(id, lastMsgId || undefined);
   if (currentConv !== id) return;
   for (const m of messages) {
-    appendMessage(m);
     lastMsgId = Math.max(lastMsgId, m.id);
+    await appendMessage(m);
   }
 }
 
-function appendMessage(m: ChatMessage) {
+async function renderContent(content: string): Promise<{ text: string; note?: string }> {
+  const envelope = parseEnvelope(content);
+  if (!envelope) return { text: content, note: "unencrypted" };
+  if (!currentKey) return { text: "🔒 (no key on this device yet)" };
+  try {
+    return { text: await decryptEnvelope(currentKey, envelope) };
+  } catch {
+    return { text: "⚠ cannot decrypt (wrong or missing key)" };
+  }
+}
+
+async function appendMessage(m: ChatMessage) {
+  const { text, note } = await renderContent(m.content);
   const list = $("message-list");
   const li = document.createElement("li");
   li.className = m.sender === $("topbar-user").textContent ? "msg mine" : "msg";
   const meta = document.createElement("div");
   meta.className = "muted";
-  meta.textContent = `${m.sender} · ${m.created_at.slice(5, 16)}`;
+  meta.textContent =
+    `${m.sender} · ${m.created_at.slice(5, 16)}` + (note ? ` · ${note}` : "");
   const body = document.createElement("div");
-  body.textContent = m.content;
+  body.textContent = text;
   li.append(meta, body);
   list.append(li);
   li.scrollIntoView({ block: "end" });
@@ -263,6 +321,7 @@ function init() {
   $("logout-btn").onclick = async () => {
     await logout();
     loggedIn = false;
+    dropKeyCache();
     socket?.close();
     show("auth");
   };
@@ -296,12 +355,18 @@ function init() {
     const input = $<HTMLInputElement>("send-input");
     const content = input.value.trim();
     if (!content || currentConv === null) return;
+    if (content.length > 4000) {
+      setError("chat-error", "message too long (max 4000 chars)");
+      return;
+    }
     try {
-      const sent = await sendMessage(currentConv, content);
+      if (!currentKey) throw new KeyPending();
+      const ciphertext = await encryptText(currentKey, content);
+      const sent = await sendMessage(currentConv, ciphertext);
       input.value = "";
       if (sent.id > lastMsgId) {
-        appendMessage(sent);
         lastMsgId = sent.id;
+        await appendMessage(sent);
       }
     } catch (err) {
       setError("chat-error", errorMessage(err));

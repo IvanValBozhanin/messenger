@@ -98,3 +98,41 @@ export const sendMessage = (conversationId: number, content: string) =>
     method: "POST",
     body: JSON.stringify({ content }),
   });
+
+export interface ConvDevice {
+  device_id: number;
+  username: string;
+  public_key: string;
+  has_key: boolean;
+}
+
+export interface WrapEntry {
+  device_id: number;
+  wrapped_key: string;
+  nonce: string;
+  wrapper_pub: string;
+}
+
+export const registerDevice = (publicKey: string, name: string) =>
+  api<{ id: number }>("/api/devices", {
+    method: "POST",
+    body: JSON.stringify({ public_key: publicKey, name }),
+  });
+
+export const conversationDevices = (conversationId: number) =>
+  api<{ devices: ConvDevice[] }>(`/api/conversations/${conversationId}/devices`);
+
+export const getConversationKey = (conversationId: number, deviceId: number) =>
+  api<{ wrapped_key: string; nonce: string; wrapper_pub: string }>(
+    `/api/conversations/${conversationId}/keys?device_id=${deviceId}`,
+  );
+
+export const postConversationKeys = (
+  conversationId: number,
+  initial: boolean,
+  entries: WrapEntry[],
+) =>
+  api<unknown>(`/api/conversations/${conversationId}/keys`, {
+    method: "POST",
+    body: JSON.stringify({ initial, entries }),
+  });
