@@ -5,7 +5,7 @@
 Ivan wants a browser-only instant messenger to move text + small multimedia between his phone and laptop (and a few trusted people), free to run, with real E2EE. Primary goal is **learning end-to-end project planning, system engineering, and Claude Code-driven development** — the app itself is deliberately small-scale (10–20 devices, low volume, latency-tolerant).
 
 **Locked decisions** (confirmed 2026-07-12):
-- Backend: **Rust** (axum + tokio + sqlx), hosted on **Shuttle** free tier (Postgres via `shuttle-shared-db`)
+- Backend: **Rust** (axum + tokio + sqlx), hosted on **Render free tier** (Docker) + **Neon free Postgres**. *Was Shuttle — Shuttle ceased operations (dead by mid-2026, discovered 2026-07-12 when `api.shuttle.dev` stopped resolving). The "free provider can vanish" tradeoff, demonstrated live; fallback activated same day.*
 - Frontend: **vanilla TypeScript + WebCrypto**, no framework, served as static files by the same axum service; PWA manifest for "Add to Home Screen"
 - Encryption: **E2EE with static X25519 keypairs** (no ratchet) — server stores ciphertext only
 - Registration: **invite codes** — seeded first account, one-time invite links
@@ -24,10 +24,10 @@ Ivan wants a browser-only instant messenger to move text + small multimedia betw
 
 ## Architecture
 
-Single Shuttle service:
+Single Render web service (Docker):
 
 ```
-[phone browser]  ⇄ HTTPS/WSS ⇄  [axum on Shuttle]  ⇄  [Shuttle Postgres]
+[phone browser]  ⇄ HTTPS/WSS ⇄  [axum on Render]   ⇄  [Neon Postgres]
 [laptop browser] ⇄ HTTPS/WSS ⇗   serves static TS/HTML too
 ```
 
@@ -59,7 +59,7 @@ Argon2id password hashing; per-IP + per-account rate limiting (tower middleware)
 
 ## Build phases (each ends SHOWN — deploy from day one)
 
-1. **Scaffold + hello-deploy** — vault project entry (see below), git init in `~/projects/messenger`, `cargo shuttle init` (axum), health endpoint + static "hello" page **live on Shuttle URL, opened from phone**. Verify current Shuttle free-tier limits here; fallback if unusable: Render + Neon Postgres (same code, add Dockerfile).
+1. **Scaffold + hello-deploy** — vault project entry (see below), git init in `~/projects/messenger`, axum skeleton, health endpoint + static "hello" page, Dockerfile + render.yaml, **live on Render URL, opened from phone**. (Shuttle attempted first — platform dead, pivoted same day.)
 2. **Auth + sessions + invites** — register via invite, login, Argon2id, cookie sessions, session-manager page (list/revoke). Shown: log in from phone, revoke that session from laptop.
 3. **Plaintext messaging core** — conversations (p2p + self), REST history, WebSocket live push, store-and-forward. Shown: phone→laptop text round-trip on the live URL. (Plaintext first so transport bugs aren't confused with crypto bugs.)
 4. **E2EE layer** — device keypairs, key wrapping, encrypt/decrypt in client. Shown: `psql` dump displays only ciphertext while UI shows plaintext.

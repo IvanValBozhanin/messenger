@@ -12,9 +12,17 @@ fn app() -> Router {
         .fallback_service(ServeDir::new("static"))
 }
 
-#[shuttle_runtime::main]
-async fn main() -> shuttle_axum::ShuttleAxum {
-    Ok(app().into())
+#[tokio::main]
+async fn main() {
+    let port: u16 = std::env::var("PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(8000);
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port))
+        .await
+        .expect("failed to bind port");
+    println!("listening on {}", listener.local_addr().unwrap());
+    axum::serve(listener, app()).await.unwrap();
 }
 
 #[cfg(test)]
