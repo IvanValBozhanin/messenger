@@ -1,4 +1,5 @@
 mod api;
+mod attachments;
 mod auth;
 mod chat;
 mod keys;
@@ -45,7 +46,10 @@ fn app(state: AppState) -> Router {
             "/api/conversations/{id}/messages",
             get(chat::list_messages).post(chat::send_message),
         )
-        .route("/api/devices", post(keys::register_device))
+        .route(
+            "/api/devices",
+            get(keys::list_my_devices).post(keys::register_device),
+        )
         .route(
             "/api/conversations/{id}/devices",
             get(keys::conversation_devices),
@@ -54,6 +58,13 @@ fn app(state: AppState) -> Router {
             "/api/conversations/{id}/keys",
             get(keys::get_conversation_key).post(keys::post_conversation_keys),
         )
+        .route(
+            "/api/conversations/{id}/attachments",
+            post(attachments::upload).layer(axum::extract::DefaultBodyLimit::max(
+                attachments::MAX_ATTACHMENT_BYTES + 1024,
+            )),
+        )
+        .route("/api/attachments/{id}", get(attachments::download))
         .fallback_service(ServeDir::new("static"))
         .with_state(state)
 }

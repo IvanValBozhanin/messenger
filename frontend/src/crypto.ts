@@ -83,19 +83,28 @@ export function supportsX25519(): Promise<boolean> {
 }
 
 /**
- * Load this browser's device identity, or create one (generate keypair,
- * register public key with the server) on first use. `registerFn` posts the
- * public key and returns the server-assigned device id.
+ * Load this browser's device identity for the given user, or create one
+ * (generate keypair, register public key with the server) on first use.
+ * Identities are stored per (browser, username): the same browser logged into
+ * a different account is a different device with its own keypair — otherwise
+ * the server rejects a device id owned by another user and key delivery
+ * stalls.
+ *
+ * `verifyFn` returns the ids of this user's devices as the server knows them;
+ * if our stored device vanished server-side (DB reset, pruning), we discard
+ * the stale identity and register a fresh one.
  */
 export async function initDevice(
+  username: string,
   registerFn: (publicKeyB64: string, name: string) => Promise<number>,
+  verifyFn: () => Promise<number[]>,
 ): Promise<DeviceIdentity> {
-  const existing = await dbGet<{
-    deviceId: number;
-    publicKeyB64: string;
-    keyPair: CryptoKeyPair;
-  }>("identity");
-  if (existing) return existing;
+  const slot = `identity:${username}`;
+  const existing = await dbGet<DeviceIdentity>(slot);
+  if (existing) {
+    const known = await verifyFn().catch(() => null);
+    if (known === null || known.includes(existing.deviceId)) return existing;
+  }
 
   const keyPair = (await crypto.subtle.generateKey({ name: "X25519" }, false, [
     "deriveBits",
@@ -105,7 +114,7 @@ export async function initDevice(
   const name = navigator.userAgent.slice(0, 60);
   const deviceId = await registerFn(publicKeyB64, name);
   const identity: DeviceIdentity = { deviceId, publicKeyB64, keyPair };
-  await dbSet("identity", identity);
+  await dbSet(slot, identity);
   return identity;
 }
 
@@ -221,4 +230,63 @@ export async function decryptEnvelope(
     fromB64(envelope.ct).buffer as ArrayBuffer,
   );
   return new TextDecoder().decode(pt);
+}
+
+// ---------- blob encryption (attachments) ----------
+
+export async function encryptBytes(
+  convKey: CryptoKey,
+  bytes: ArrayBuffer,
+): Promise<{ nonceB64: string; ciphertext: ArrayBuffer }> {
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    convKey,
+    bytes,
+  );
+  return { nonceB64: toB64(nonce), ciphertext };
+}
+
+export async function decryptBytes(
+  convKey: CryptoKey,
+  nonceB64: string,
+  ciphertext: ArrayBuffer,
+): Promise<ArrayBuffer> {
+  return crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromB64(nonceB64).buffer as ArrayBuffer },
+    convKey,
+    ciphertext,
+  );
+}
+
+/**
+ * Plaintext protocol inside envelopes: ordinary messages are plain strings;
+ * file messages are JSON `{"t":"file",att,name,mime,n}` where `att` is the
+ * attachment id, `n` the blob nonce. The server sees none of these fields.
+ */
+export interface FileMeta {
+  t: "file";
+  att: number;
+  name: string;
+  mime: string;
+  n: string;
+}
+
+export function parseFileMeta(plaintext: string): FileMeta | null {
+  if (!plaintext.startsWith('{"t":"file"')) return null;
+  try {
+    const meta = JSON.parse(plaintext);
+    if (
+      meta.t === "file" &&
+      typeof meta.att === "number" &&
+      typeof meta.name === "string" &&
+      typeof meta.mime === "string" &&
+      typeof meta.n === "string"
+    ) {
+      return meta;
+    }
+  } catch {
+    /* not a file message */
+  }
+  return null;
 }

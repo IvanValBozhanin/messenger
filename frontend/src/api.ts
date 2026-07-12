@@ -77,7 +77,9 @@ export interface ChatMessage {
 
 export type WsEvent =
   | { type: "message"; conversation_id: number; message: ChatMessage }
-  | { type: "session_revoked" };
+  | { type: "session_revoked" }
+  | { type: "sync_keys" }
+  | { type: "keys_updated"; conversation_id: number };
 
 export const listConversations = () =>
   api<{ conversations: Conversation[] }>("/api/conversations");
@@ -118,6 +120,29 @@ export const registerDevice = (publicKey: string, name: string) =>
     method: "POST",
     body: JSON.stringify({ public_key: publicKey, name }),
   });
+
+export const listMyDevices = () =>
+  api<{ device_ids: number[] }>("/api/devices");
+
+export async function uploadAttachment(
+  conversationId: number,
+  ciphertext: ArrayBuffer,
+): Promise<number> {
+  const res = await fetch(`/api/conversations/${conversationId}/attachments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/octet-stream" },
+    body: ciphertext,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  const body = (await res.json()) as { id: number };
+  return body.id;
+}
+
+export async function downloadAttachment(id: number): Promise<ArrayBuffer> {
+  const res = await fetch(`/api/attachments/${id}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.arrayBuffer();
+}
 
 export const conversationDevices = (conversationId: number) =>
   api<{ devices: ConvDevice[] }>(`/api/conversations/${conversationId}/devices`);

@@ -10,7 +10,8 @@ Built as a system-engineering learning project: every architectural decision, tr
 - **Live delivery** over WebSocket — messages appear instantly, no refresh
 - **Invite-only** — no open registration; the first account is bootstrapped from server logs, everyone else joins via single-use invite links
 - **Session manager** — see every logged-in device, revoke any of them; revoked devices are kicked *live* over the same WebSocket
-- **End-to-end encryption** *(phase 4, in progress)* — X25519 device keypairs + AES-256-GCM conversation keys via WebCrypto; the server stores only ciphertext
+- **End-to-end encryption** — X25519 device keypairs + AES-256-GCM conversation keys via WebCrypto; the server stores only ciphertext, for messages and file attachments alike
+- **Installable** — PWA manifest; "Add to Home Screen" on the phone makes it feel like a native app while staying a plain web page
 
 ## Architecture
 
@@ -60,8 +61,8 @@ Deploy: any Docker host works. `render.yaml` is included — connect the repo to
 - [x] Phase 1 — scaffold + hello-deploy
 - [x] Phase 2 — auth, sessions, invites
 - [x] Phase 3 — messaging core + WebSocket live push + live session kick
-- [ ] Phase 4 — end-to-end encryption
-- [ ] Phase 5 — encrypted media + PWA
+- [x] Phase 4 — end-to-end encryption
+- [x] Phase 5 — encrypted media (≤10 MB, client-side encrypted blobs) + PWA
 - [ ] Phase 6 — hardening (rate limits, CSP, retention)
 
 ## License

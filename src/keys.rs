@@ -68,7 +68,38 @@ pub async fn register_device(
     .fetch_one(&state.pool)
     .await
     .map_err(internal)?;
+
+    // Nudge everyone who shares a conversation with this user (including the
+    // user's own other devices): key-holding clients react by wrapping the
+    // conversation key for the new device — no manual reload needed.
+    let peers: Vec<i64> = sqlx::query_scalar(
+        "SELECT DISTINCT m2.user_id FROM conversation_members m1 \
+         JOIN conversation_members m2 ON m2.conversation_id = m1.conversation_id \
+         WHERE m1.user_id = $1",
+    )
+    .bind(user.user_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal)?;
+    state
+        .hub
+        .send_to_users(&peers, r#"{"type":"sync_keys"}"#);
+
     Ok(Json(json!({ "id": id })))
+}
+
+/// Ids of the caller's own registered devices — lets a client detect that its
+/// locally stored device identity is stale (e.g. server DB was reset).
+pub async fn list_my_devices(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Value>, ApiError> {
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM devices WHERE user_id = $1")
+        .bind(user.user_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(internal)?;
+    Ok(Json(json!({ "device_ids": ids })))
 }
 
 /// All devices of all members of a conversation, with per-device key status.
@@ -147,7 +178,19 @@ pub async fn get_conversation_key(
             "nonce": r.get::<String, _>(1),
             "wrapper_pub": r.get::<String, _>(2),
         }))),
-        None => Err((StatusCode::NOT_FOUND, "no key for this device yet")),
+        None => {
+            // A device is asking for a key it doesn't have: nudge the other
+            // members so any online key-holder wraps for it immediately.
+            let members: Vec<i64> = sqlx::query_scalar(
+                "SELECT user_id FROM conversation_members WHERE conversation_id = $1",
+            )
+            .bind(conversation_id)
+            .fetch_all(&state.pool)
+            .await
+            .map_err(internal)?;
+            state.hub.send_to_users(&members, r#"{"type":"sync_keys"}"#);
+            Err((StatusCode::NOT_FOUND, "no key for this device yet"))
+        }
     }
 }
 
@@ -237,5 +280,18 @@ pub async fn post_conversation_keys(
         .map_err(internal)?;
     }
     tx.commit().await.map_err(internal)?;
+
+    // Tell members fresh keys landed; a device stuck on "waiting for key"
+    // retries immediately instead of waiting for a manual reload.
+    let members: Vec<i64> = sqlx::query_scalar(
+        "SELECT user_id FROM conversation_members WHERE conversation_id = $1",
+    )
+    .bind(conversation_id)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(internal)?;
+    let event = json!({ "type": "keys_updated", "conversation_id": conversation_id });
+    state.hub.send_to_users(&members, &event.to_string());
+
     Ok(Json(json!({})))
 }

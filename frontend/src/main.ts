@@ -17,13 +17,17 @@ import {
   WsEvent,
 } from "./api";
 import {
+  decryptBytes,
   decryptEnvelope,
   DeviceIdentity,
+  encryptBytes,
   encryptText,
   initDevice,
   parseEnvelope,
+  parseFileMeta,
   supportsX25519,
 } from "./crypto";
+import { downloadAttachment, listMyDevices, uploadAttachment } from "./api";
 import { dropKeyCache, ensureConvKey, KeyPending, sweepWrapMissing } from "./keysync";
 
 const $ = <T extends HTMLElement>(id: string): T =>
@@ -75,9 +79,20 @@ function connectWs() {
       await onIncoming(event.conversation_id, event.message);
     } else if (event.type === "session_revoked") {
       loggedIn = false;
+      identity = null;
+      dropKeyCache();
       socket?.close();
       show("auth");
       setError("login-error", "this session was revoked from another device");
+    } else if (event.type === "sync_keys") {
+      // Someone registered a new device — wrap conversation keys we hold.
+      if (identity) void sweepWrapMissing(identity);
+    } else if (event.type === "keys_updated") {
+      // Fresh keys landed; if this chat was waiting for one, retry now.
+      if (currentConv === event.conversation_id && !currentKey && identity) {
+        const title = $("chat-title").textContent ?? "";
+        void openConversation(event.conversation_id, title);
+      }
     }
   };
   socket.onclose = () => {
@@ -116,10 +131,14 @@ async function enterApp(username: string) {
     );
     return;
   }
-  identity = await initDevice(async (pub, name) => {
-    const d = await registerDevice(pub, name);
-    return d.id;
-  });
+  identity = await initDevice(
+    username,
+    async (pub, name) => {
+      const d = await registerDevice(pub, name);
+      return d.id;
+    },
+    async () => (await listMyDevices()).device_ids,
+  );
   void sweepWrapMissing(identity);
 
   if (!socket) connectWs();
@@ -203,7 +222,42 @@ async function appendMessage(m: ChatMessage) {
   meta.textContent =
     `${m.sender} · ${m.created_at.slice(5, 16)}` + (note ? ` · ${note}` : "");
   const body = document.createElement("div");
-  body.textContent = text;
+
+  const file = parseFileMeta(text);
+  if (file && currentKey) {
+    const key = currentKey;
+    const btn = document.createElement("button");
+    btn.textContent = `📎 ${file.name}`;
+    btn.onclick = async () => {
+      btn.disabled = true;
+      try {
+        const ct = await downloadAttachment(file.att);
+        const pt = await decryptBytes(key, file.n, ct);
+        const url = URL.createObjectURL(new Blob([pt], { type: file.mime }));
+        if (file.mime.startsWith("image/")) {
+          const img = document.createElement("img");
+          img.src = url;
+          img.style.maxWidth = "100%";
+          img.style.borderRadius = "0.4rem";
+          body.replaceChildren(img);
+        } else {
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = file.name;
+          a.textContent = `save ${file.name}`;
+          body.replaceChildren(a);
+          a.click();
+        }
+      } catch {
+        btn.textContent = `⚠ failed to fetch/decrypt ${file.name}`;
+        btn.disabled = false;
+      }
+    };
+    body.append(btn);
+  } else {
+    body.textContent = text;
+  }
+
   li.append(meta, body);
   list.append(li);
   li.scrollIntoView({ block: "end" });
@@ -321,6 +375,7 @@ function init() {
   $("logout-btn").onclick = async () => {
     await logout();
     loggedIn = false;
+    identity = null;
     dropKeyCache();
     socket?.close();
     show("auth");
@@ -376,6 +431,44 @@ function init() {
   $("new-invite-btn").onclick = async () => {
     await createInvite();
     await renderInvites();
+  };
+
+  $("attach-btn").onclick = () => $<HTMLInputElement>("attach-input").click();
+  $("attach-input").onchange = async () => {
+    const input = $<HTMLInputElement>("attach-input");
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || currentConv === null) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setError("chat-error", "file too large (max 10 MB)");
+      return;
+    }
+    setError("chat-error", "");
+    try {
+      if (!currentKey) throw new KeyPending();
+      const { nonceB64, ciphertext } = await encryptBytes(
+        currentKey,
+        await file.arrayBuffer(),
+      );
+      const attId = await uploadAttachment(currentConv, ciphertext);
+      const meta = JSON.stringify({
+        t: "file",
+        att: attId,
+        name: file.name.slice(0, 120),
+        mime: file.type || "application/octet-stream",
+        n: nonceB64,
+      });
+      const sent = await sendMessage(
+        currentConv,
+        await encryptText(currentKey, meta),
+      );
+      if (sent.id > lastMsgId) {
+        lastMsgId = sent.id;
+        await appendMessage(sent);
+      }
+    } catch (err) {
+      setError("chat-error", errorMessage(err));
+    }
   };
 
   getMe()
