@@ -212,6 +212,63 @@ async function renderContent(content: string): Promise<{ text: string; note?: st
   }
 }
 
+// Decrypted attachment object-URLs, keyed by attachment id, so re-renders
+// don't refetch and redecrypt.
+const attachmentUrls = new Map<number, string>();
+
+async function attachmentUrl(
+  file: { att: number; n: string; mime: string },
+  key: CryptoKey,
+): Promise<string> {
+  const cached = attachmentUrls.get(file.att);
+  if (cached) return cached;
+  const ct = await downloadAttachment(file.att);
+  const pt = await decryptBytes(key, file.n, ct);
+  const url = URL.createObjectURL(new Blob([pt], { type: file.mime }));
+  attachmentUrls.set(file.att, url);
+  return url;
+}
+
+async function renderAttachment(
+  file: { att: number; n: string; mime: string; name: string },
+  body: HTMLElement,
+  key: CryptoKey,
+) {
+  try {
+    if (file.mime.startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = await attachmentUrl(file, key);
+      img.alt = file.name;
+      body.replaceChildren(img);
+    } else if (file.mime.startsWith("video/")) {
+      const video = document.createElement("video");
+      video.src = await attachmentUrl(file, key);
+      video.controls = true;
+      video.preload = "metadata";
+      body.replaceChildren(video);
+    } else if (file.mime === "application/pdf") {
+      const btn = document.createElement("button");
+      btn.textContent = `📄 ${file.name} — open`;
+      btn.onclick = async () => {
+        window.open(await attachmentUrl(file, key), "_blank");
+      };
+      body.replaceChildren(btn);
+    } else {
+      const btn = document.createElement("button");
+      btn.textContent = `📎 ${file.name} — save`;
+      btn.onclick = async () => {
+        const a = document.createElement("a");
+        a.href = await attachmentUrl(file, key);
+        a.download = file.name;
+        a.click();
+      };
+      body.replaceChildren(btn);
+    }
+  } catch {
+    body.textContent = `⚠ failed to fetch/decrypt ${file.name}`;
+  }
+}
+
 async function appendMessage(m: ChatMessage) {
   const { text, note } = await renderContent(m.content);
   const list = $("message-list");
@@ -225,35 +282,7 @@ async function appendMessage(m: ChatMessage) {
 
   const file = parseFileMeta(text);
   if (file && currentKey) {
-    const key = currentKey;
-    const btn = document.createElement("button");
-    btn.textContent = `📎 ${file.name}`;
-    btn.onclick = async () => {
-      btn.disabled = true;
-      try {
-        const ct = await downloadAttachment(file.att);
-        const pt = await decryptBytes(key, file.n, ct);
-        const url = URL.createObjectURL(new Blob([pt], { type: file.mime }));
-        if (file.mime.startsWith("image/")) {
-          const img = document.createElement("img");
-          img.src = url;
-          img.style.maxWidth = "100%";
-          img.style.borderRadius = "0.4rem";
-          body.replaceChildren(img);
-        } else {
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = file.name;
-          a.textContent = `save ${file.name}`;
-          body.replaceChildren(a);
-          a.click();
-        }
-      } catch {
-        btn.textContent = `⚠ failed to fetch/decrypt ${file.name}`;
-        btn.disabled = false;
-      }
-    };
-    body.append(btn);
+    await renderAttachment(file, body, currentKey);
   } else {
     body.textContent = text;
   }
