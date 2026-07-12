@@ -100,10 +100,24 @@ export async function initDevice(
   verifyFn: () => Promise<number[]>,
 ): Promise<DeviceIdentity> {
   const slot = `identity:${username}`;
+  const known = await verifyFn().catch(() => null);
+  const owns = (d: DeviceIdentity | undefined): d is DeviceIdentity =>
+    !!d && known !== null && known.includes(d.deviceId);
+
+  // Pre-v0.5.0 identities lived in a single per-browser slot. If that legacy
+  // device belongs to this account, prefer it — it is the device the
+  // conversation keys were wrapped for; a newer per-account identity created
+  // by the botched v0.5.0 migration holds no keys. Adopt it into the
+  // per-account slot.
+  const legacy = await dbGet<DeviceIdentity>("identity");
+  if (owns(legacy)) {
+    await dbSet(slot, legacy);
+    return legacy;
+  }
+
   const existing = await dbGet<DeviceIdentity>(slot);
-  if (existing) {
-    const known = await verifyFn().catch(() => null);
-    if (known === null || known.includes(existing.deviceId)) return existing;
+  if (existing && (known === null || known.includes(existing.deviceId))) {
+    return existing;
   }
 
   const keyPair = (await crypto.subtle.generateKey({ name: "X25519" }, false, [
