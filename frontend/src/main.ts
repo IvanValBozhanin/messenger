@@ -1,6 +1,8 @@
 import {
   ApiError,
   ChatMessage,
+  Conversation,
+  conversationDevices,
   createConversation,
   createInvite,
   getMe,
@@ -14,6 +16,7 @@ import {
   registerDevice,
   revokeSession,
   sendMessage,
+  setRetention,
   WsEvent,
 } from "./api";
 import {
@@ -22,6 +25,7 @@ import {
   DeviceIdentity,
   encryptBytes,
   encryptText,
+  fingerprint,
   initDevice,
   parseEnvelope,
   parseFileMeta,
@@ -41,6 +45,7 @@ let currentConv: number | null = null;
 let currentKey: CryptoKey | null = null;
 let lastMsgId = 0;
 let identity: DeviceIdentity | null = null;
+const convCache = new Map<number, Conversation>();
 
 // ---------- views ----------
 
@@ -148,6 +153,7 @@ async function enterApp(username: string) {
 
 async function renderConversations() {
   const { conversations } = await listConversations();
+  for (const c of conversations) convCache.set(c.id, c);
   const list = $("conv-list");
   list.replaceChildren(
     ...conversations.map((c) => {
@@ -177,6 +183,10 @@ async function openConversation(id: number, title: string) {
   $("message-list").replaceChildren();
   setError("chat-error", "");
   $<HTMLInputElement>("send-input").disabled = false;
+  $("chat-info").hidden = true;
+  $<HTMLSelectElement>("retention-select").value = String(
+    convCache.get(id)?.retention_days ?? "",
+  );
   show("chat");
   currentConv = id; // show() clears it
 
@@ -296,7 +306,31 @@ async function appendMessage(m: ChatMessage) {
 
 async function renderSettings() {
   show("settings");
+  $("my-fingerprint").textContent = identity
+    ? `${await fingerprint(identity.publicKeyB64)}  (device #${identity.deviceId})`
+    : "no device identity";
   await Promise.all([renderSessions(), renderInvites()]);
+}
+
+async function renderFingerprints(conversationId: number) {
+  const { devices } = await conversationDevices(conversationId);
+  const list = $("fingerprint-list");
+  list.replaceChildren(
+    ...(await Promise.all(
+      devices.map(async (d) => {
+        const li = document.createElement("li");
+        const who = document.createElement("div");
+        who.textContent =
+          `${d.username} — device #${d.device_id}` +
+          (identity && d.device_id === identity.deviceId ? " (this device)" : "");
+        const fp = document.createElement("div");
+        fp.className = "fp";
+        fp.textContent = await fingerprint(d.public_key);
+        li.append(who, fp);
+        return li;
+      }),
+    )),
+  );
 }
 
 async function renderSessions() {
@@ -460,6 +494,27 @@ function init() {
   $("new-invite-btn").onclick = async () => {
     await createInvite();
     await renderInvites();
+  };
+
+  $("info-btn").onclick = async () => {
+    const panel = $("chat-info");
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden && currentConv !== null) {
+      await renderFingerprints(currentConv);
+    }
+  };
+
+  $("retention-select").onchange = async () => {
+    if (currentConv === null) return;
+    const value = $<HTMLSelectElement>("retention-select").value;
+    const days = value === "" ? null : Number(value);
+    try {
+      await setRetention(currentConv, days);
+      const cached = convCache.get(currentConv);
+      if (cached) cached.retention_days = days;
+    } catch (err) {
+      setError("chat-error", errorMessage(err));
+    }
   };
 
   $("attach-btn").onclick = () => $<HTMLInputElement>("attach-input").click();

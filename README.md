@@ -33,8 +33,12 @@ One Rust binary does everything: serves the static frontend, exposes a REST API 
 | Passwords | Argon2id, verified in constant-time-ish fashion (dummy-hash for unknown users — no timing-based username probing) |
 | Sessions | 256-bit random tokens in `HttpOnly; Secure; SameSite=Strict` cookies; DB stores only the SHA-256 of the token, so a leaked sessions table can't be replayed |
 | Registration | Single-use invite codes with 7-day expiry; no open signup, no account enumeration (uniform errors) |
-| Transport | TLS everywhere (Render-terminated) |
-| Content *(phase 4)* | E2EE: per-device X25519 keypairs (non-extractable, IndexedDB), per-conversation AES-256-GCM keys wrapped for each member device via ECDH → HKDF |
+| Transport | TLS everywhere (Render-terminated) + HSTS |
+| Content | E2EE: per-device X25519 keypairs (non-extractable, IndexedDB), per-conversation AES-256-GCM keys wrapped for each member device via ECDH → HKDF; automatic key delivery to new devices over WebSocket |
+| XSS surface | Strict CSP (`default-src 'self'`, no inline, no external origins), `frame-ancestors 'none'`, nosniff, no-referrer |
+| Brute force | Per-IP token bucket on auth endpoints + per-account exponential backoff (backoff, not lockout — attackers can't lock out a real user) |
+| Key substitution | Device key fingerprints shown in UI for out-of-band comparison |
+| Data minimization | Optional per-conversation auto-delete (1/7/30 days, server-side sweep) — deleted ciphertext survives no future key compromise |
 
 ### Threat model — honest version
 
@@ -63,7 +67,7 @@ Deploy: any Docker host works. `render.yaml` is included — connect the repo to
 - [x] Phase 3 — messaging core + WebSocket live push + live session kick
 - [x] Phase 4 — end-to-end encryption
 - [x] Phase 5 — encrypted media (≤10 MB, client-side encrypted blobs) + PWA
-- [ ] Phase 6 — hardening (rate limits, CSP, retention)
+- [x] Phase 6 — hardening (rate limits, strict CSP, key fingerprints, retention)
 
 ## License
 

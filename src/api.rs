@@ -1,4 +1,6 @@
-use axum::extract::{Path, State};
+use std::net::SocketAddr;
+
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -72,10 +74,15 @@ pub struct RegisterReq {
 
 pub async fn register(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     jar: CookieJar,
     headers: HeaderMap,
     Json(req): Json<RegisterReq>,
 ) -> Result<(CookieJar, Json<Value>), ApiError> {
+    let ip = crate::limit::client_ip(&headers, &addr.ip().to_string());
+    if !state.limiter.allow("auth", &ip, 10.0, 10.0) {
+        return Err((StatusCode::TOO_MANY_REQUESTS, "too many requests, slow down"));
+    }
     let username = req.username.trim().to_string();
     if username.len() < 3
         || username.len() > 32
@@ -140,10 +147,23 @@ pub struct LoginReq {
 
 pub async fn login(
     State(state): State<AppState>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     jar: CookieJar,
     headers: HeaderMap,
     Json(req): Json<LoginReq>,
 ) -> Result<(CookieJar, Json<Value>), ApiError> {
+    let ip = crate::limit::client_ip(&headers, &addr.ip().to_string());
+    if !state.limiter.allow("auth", &ip, 10.0, 10.0) {
+        return Err((StatusCode::TOO_MANY_REQUESTS, "too many requests, slow down"));
+    }
+    let username_key = req.username.trim().to_string();
+    if state.limiter.login_blocked(&username_key) {
+        return Err((
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many failed attempts, wait a moment",
+        ));
+    }
+
     let row = sqlx::query("SELECT id, username, password_hash FROM users WHERE username = $1")
         .bind(req.username.trim())
         .fetch_optional(&state.pool)
@@ -163,8 +183,10 @@ pub async fn login(
         .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "hash error"))?;
 
     if row.is_none() || !valid {
+        state.limiter.login_failed(&username_key);
         return Err((StatusCode::UNAUTHORIZED, "invalid username or password"));
     }
+    state.limiter.login_succeeded(&username_key);
 
     let jar = create_session(&state.pool, jar, user_id, user_agent(&headers)).await?;
     Ok((jar, Json(json!({ "username": username }))))

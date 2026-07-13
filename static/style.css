@@ -1,0 +1,37 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { font-family: system-ui, sans-serif; max-width: 30rem; margin: 0 auto; padding: .8rem 1rem 1.5rem; background: #111; color: #eee; }
+h1 { font-size: 1.3rem; margin: .4rem 0 .8rem; }
+h2 { font-size: 1.05rem; margin-top: 1.4rem; }
+form { display: grid; gap: .5rem; margin-bottom: 1rem; }
+input, select { padding: .55rem; border-radius: .4rem; border: 1px solid #444; background: #1c1c1c; color: #eee; font-size: 1rem; }
+button { padding: .5rem .8rem; border-radius: .4rem; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: .95rem; cursor: pointer; }
+button:hover { background: #333; }
+ul { list-style: none; padding: 0; display: grid; gap: .4rem; margin: .5rem 0; }
+li { font-size: .92rem; background: #1a1a1a; padding: .5rem .6rem; border-radius: .4rem; }
+li button { padding: .2rem .5rem; font-size: .8rem; margin-left: .4rem; }
+code { background: #222; padding: .1rem .3rem; border-radius: .3rem; }
+.error { color: #f77; min-height: 1.2em; font-size: .9rem; }
+.muted { color: #999; font-size: .85rem; }
+[hidden] { display: none !important; }
+
+#topbar { display: flex; align-items: center; gap: .6rem; padding: .3rem 0 .6rem; border-bottom: 1px solid #333; }
+#topbar .spacer { flex: 1; }
+.conv { cursor: pointer; display: flex; gap: .4rem; align-items: baseline; overflow: hidden; white-space: nowrap; }
+.conv:hover { background: #232323; }
+
+#view-chat { display: flex; flex-direction: column; height: calc(100dvh - 5.5rem); }
+#chat-head { display: flex; align-items: center; gap: .6rem; padding: .4rem 0; }
+#chat-head .spacer { flex: 1; }
+#message-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: .4rem; }
+#message-list > :first-child { margin-top: auto; }
+.msg { max-width: 85%; }
+.msg.mine { margin-left: auto; background: #1e2a3a; }
+.msg div:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg img, .msg video { max-width: 100%; border-radius: .4rem; display: block; }
+#send-form { display: flex; gap: .5rem; margin: .5rem 0 0; }
+#send-input { flex: 1; }
+
+#chat-info { border: 1px solid #333; border-radius: .4rem; padding: .5rem .6rem; margin: .3rem 0; }
+#chat-info label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; }
+.fp { font-family: monospace; font-size: .8rem; color: #9c9; overflow-wrap: anywhere; }

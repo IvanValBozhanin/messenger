@@ -3,11 +3,18 @@ mod attachments;
 mod auth;
 mod chat;
 mod keys;
+mod limit;
 mod ws;
 
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
-use axum::routing::{delete, get, post};
+use axum::extract::Request;
+use axum::http::header::{HeaderName, HeaderValue};
+use axum::middleware::{self, Next};
+use axum::response::Response;
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -21,6 +28,49 @@ pub struct AppState {
     /// for unknown usernames.
     pub dummy_hash: Arc<String>,
     pub hub: ws::Hub,
+    pub limiter: Arc<limit::RateLimiter>,
+}
+
+/// XSS is total defeat for browser-held keys, so the CSP is strict: nothing
+/// executes or loads unless we shipped it; blob: only where decrypted media
+/// needs it.
+const CSP: &str = "default-src 'self'; script-src 'self'; style-src 'self'; \
+     img-src 'self' blob:; media-src 'self' blob:; connect-src 'self'; \
+     object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'";
+
+async fn security_headers(req: Request, next: Next) -> Response {
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    let set = |h: &mut axum::http::HeaderMap, name: &'static str, value: &'static str| {
+        h.insert(
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
+        );
+    };
+    set(h, "content-security-policy", CSP);
+    set(
+        h,
+        "strict-transport-security",
+        "max-age=31536000; includeSubDomains",
+    );
+    set(h, "x-content-type-options", "nosniff");
+    set(h, "referrer-policy", "no-referrer");
+    res
+}
+
+/// Data minimization: with static keys (no forward secrecy), deleted
+/// ciphertext is the only thing a future key compromise can never decrypt.
+async fn retention_sweep(pool: &PgPool) {
+    for table in ["messages", "attachments"] {
+        let sql = format!(
+            "DELETE FROM {table} t USING conversations c \
+             WHERE c.id = t.conversation_id AND c.retention_days IS NOT NULL \
+             AND t.created_at < now() - make_interval(days => c.retention_days)"
+        );
+        if let Err(e) = sqlx::query(&sql).execute(pool).await {
+            eprintln!("retention sweep failed for {table}: {e}");
+        }
+    }
 }
 
 async fn health() -> Json<serde_json::Value> {
@@ -42,6 +92,7 @@ fn app(state: AppState) -> Router {
             "/api/conversations",
             get(chat::list_conversations).post(chat::create_conversation),
         )
+        .route("/api/conversations/{id}", patch(chat::set_retention))
         .route(
             "/api/conversations/{id}/messages",
             get(chat::list_messages).post(chat::send_message),
@@ -66,6 +117,7 @@ fn app(state: AppState) -> Router {
         )
         .route("/api/attachments/{id}", get(attachments::download))
         .fallback_service(ServeDir::new("static"))
+        .layer(middleware::from_fn(security_headers))
         .with_state(state)
 }
 
@@ -118,12 +170,20 @@ async fn main() {
     bootstrap_invite(&pool).await;
 
     let state = AppState {
-        pool,
+        pool: pool.clone(),
         dummy_hash: Arc::new(
             auth::hash_password(&auth::generate_token()).expect("failed to create dummy hash"),
         ),
         hub: ws::Hub::default(),
+        limiter: Arc::new(limit::RateLimiter::default()),
     };
+
+    tokio::spawn(async move {
+        loop {
+            retention_sweep(&pool).await;
+            tokio::time::sleep(Duration::from_secs(3600)).await;
+        }
+    });
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -133,5 +193,10 @@ async fn main() {
         .await
         .expect("failed to bind port");
     println!("listening on {}", listener.local_addr().unwrap());
-    axum::serve(listener, app(state)).await.unwrap();
+    axum::serve(
+        listener,
+        app(state).into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }

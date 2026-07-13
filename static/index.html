@@ -7,41 +7,8 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icon.svg">
+  <link rel="stylesheet" href="/style.css">
   <title>Messenger</title>
-  <style>
-    :root { color-scheme: dark; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; max-width: 30rem; margin: 0 auto; padding: .8rem 1rem 1.5rem; background: #111; color: #eee; }
-    h1 { font-size: 1.3rem; margin: .4rem 0 .8rem; }
-    h2 { font-size: 1.05rem; margin-top: 1.4rem; }
-    form { display: grid; gap: .5rem; margin-bottom: 1rem; }
-    input { padding: .55rem; border-radius: .4rem; border: 1px solid #444; background: #1c1c1c; color: #eee; font-size: 1rem; }
-    button { padding: .5rem .8rem; border-radius: .4rem; border: 1px solid #555; background: #2a2a2a; color: #eee; font-size: .95rem; cursor: pointer; }
-    button:hover { background: #333; }
-    ul { list-style: none; padding: 0; display: grid; gap: .4rem; margin: .5rem 0; }
-    li { font-size: .92rem; background: #1a1a1a; padding: .5rem .6rem; border-radius: .4rem; }
-    li button { padding: .2rem .5rem; font-size: .8rem; margin-left: .4rem; }
-    code { background: #222; padding: .1rem .3rem; border-radius: .3rem; }
-    .error { color: #f77; min-height: 1.2em; font-size: .9rem; }
-    .muted { color: #999; font-size: .85rem; }
-    [hidden] { display: none !important; }
-
-    #topbar { display: flex; align-items: center; gap: .6rem; padding: .3rem 0 .6rem; border-bottom: 1px solid #333; }
-    #topbar .spacer { flex: 1; }
-    .conv { cursor: pointer; display: flex; gap: .4rem; align-items: baseline; overflow: hidden; white-space: nowrap; }
-    .conv:hover { background: #232323; }
-
-    #view-chat { display: flex; flex-direction: column; height: calc(100dvh - 5.5rem); }
-    #chat-head { display: flex; align-items: center; gap: .6rem; padding: .4rem 0; }
-    #message-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: .4rem; }
-    #message-list > :first-child { margin-top: auto; }
-    .msg img, .msg video { max-width: 100%; border-radius: .4rem; display: block; }
-    .msg { max-width: 85%; }
-    .msg.mine { margin-left: auto; background: #1e2a3a; }
-    .msg div:last-child { white-space: pre-wrap; overflow-wrap: anywhere; }
-    #send-form { display: flex; gap: .5rem; margin: .5rem 0 0; }
-    #send-input { flex: 1; }
-  </style>
 </head>
 <body>
   <div id="topbar" hidden>
@@ -85,6 +52,20 @@
     <div id="chat-head">
       <button id="back-btn">←</button>
       <strong id="chat-title"></strong>
+      <span class="spacer"></span>
+      <button id="info-btn" title="keys and retention">🔑</button>
+    </div>
+    <div id="chat-info" hidden>
+      <label>Auto-delete after
+        <select id="retention-select">
+          <option value="">never</option>
+          <option value="1">1 day</option>
+          <option value="7">7 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </label>
+      <p class="muted">Device key fingerprints — compare with the other person over a channel this server doesn't control:</p>
+      <ul id="fingerprint-list"></ul>
     </div>
     <ul id="message-list"></ul>
     <form id="send-form">
@@ -97,6 +78,10 @@
   </section>
 
   <section id="view-settings" hidden>
+    <h2>This device</h2>
+    <p class="muted">Key fingerprint (what others should see for you):</p>
+    <div id="my-fingerprint" class="fp">…</div>
+
     <h2>Active sessions</h2>
     <ul id="session-list"></ul>
 

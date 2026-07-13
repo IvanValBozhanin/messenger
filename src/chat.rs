@@ -59,7 +59,8 @@ pub async fn list_conversations(
            (SELECT content FROM messages WHERE conversation_id = c.id \
             ORDER BY id DESC LIMIT 1) AS last_message, \
            (SELECT created_at::text FROM messages WHERE conversation_id = c.id \
-            ORDER BY id DESC LIMIT 1) AS last_at \
+            ORDER BY id DESC LIMIT 1) AS last_at, \
+           c.retention_days \
          FROM conversations c \
          JOIN conversation_members me ON me.conversation_id = c.id AND me.user_id = $1 \
          ORDER BY COALESCE((SELECT max(id) FROM messages \
@@ -79,6 +80,7 @@ pub async fn list_conversations(
                 "peers": r.get::<String, _>(2),
                 "last_message": r.get::<Option<String>, _>(3),
                 "last_at": r.get::<Option<String>, _>(4),
+                "retention_days": r.get::<Option<i32>, _>(5),
             })
         })
         .collect();
@@ -180,6 +182,34 @@ pub async fn create_conversation(
         }
         _ => Err((StatusCode::BAD_REQUEST, "kind must be 'p2p' or 'self'")),
     }
+}
+
+#[derive(Deserialize)]
+pub struct RetentionReq {
+    retention_days: Option<i32>,
+}
+
+/// Set or clear per-conversation auto-delete. Any member may change it —
+/// members share the plaintext anyway, so none of them is more trusted.
+pub async fn set_retention(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<i64>,
+    Json(req): Json<RetentionReq>,
+) -> Result<Json<Value>, ApiError> {
+    if let Some(days) = req.retention_days {
+        if !(1..=365).contains(&days) {
+            return Err((StatusCode::BAD_REQUEST, "retention_days must be 1-365"));
+        }
+    }
+    require_member(&state, conversation_id, user.user_id).await?;
+    sqlx::query("UPDATE conversations SET retention_days = $1 WHERE id = $2")
+        .bind(req.retention_days)
+        .bind(conversation_id)
+        .execute(&state.pool)
+        .await
+        .map_err(internal)?;
+    Ok(Json(json!({ "retention_days": req.retention_days })))
 }
 
 #[derive(Deserialize)]

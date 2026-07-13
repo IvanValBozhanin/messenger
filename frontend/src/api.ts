@@ -66,6 +66,7 @@ export interface Conversation {
   peers: string;
   last_message: string | null;
   last_at: string | null;
+  retention_days: number | null;
 }
 
 export interface ChatMessage {
@@ -83,6 +84,12 @@ export type WsEvent =
 
 export const listConversations = () =>
   api<{ conversations: Conversation[] }>("/api/conversations");
+
+export const setRetention = (conversationId: number, days: number | null) =>
+  api<unknown>(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ retention_days: days }),
+  });
 
 export const createConversation = (kind: "p2p" | "self", username?: string) =>
   api<{ id: number; kind: string }>("/api/conversations", {

@@ -246,6 +246,22 @@ export async function decryptEnvelope(
   return new TextDecoder().decode(pt);
 }
 
+/**
+ * Human-comparable hash of a device public key: first 128 bits of
+ * SHA-256(raw key), as eight groups of four hex chars. Compared out-of-band,
+ * this defeats a server substituting its own key at the exchange step.
+ */
+export async function fingerprint(pubB64: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    fromB64(pubB64).buffer as ArrayBuffer,
+  );
+  const hex = Array.from(new Uint8Array(digest).slice(0, 16))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return hex.replace(/(.{4})(?=.)/g, "$1 ");
+}
+
 // ---------- blob encryption (attachments) ----------
 
 export async function encryptBytes(
